@@ -12,7 +12,7 @@ IMAGE_NAME="${IMAGE_NAME:-ray-mlops-demo}"
 HARBOR_USERNAME="${HARBOR_USERNAME:-admin}"
 HARBOR_PASSWORD="${HARBOR_PASSWORD:-Harbor12345}"
 NODE_SSH_USER="${NODE_SSH_USER:-lih}"
-NODE_SSH_PASSWORD="${NODE_SSH_PASSWORD:-1234qwer}"
+NODE_SSH_PASSWORD="${NODE_SSH_PASSWORD:-Baynex9977!}"
 BUILD_VM_NAME="${BUILD_VM_NAME:-mlops-build}"
 BUILD_VM_HOST="${BUILD_VM_HOST:-${BUILD_VM_IP:-192.168.1.97}}"
 TRAINING_REPO_URL="${TRAINING_REPO_URL:-https://github.com/InhongLee95/morpheus-mlops-training.git}"
@@ -86,11 +86,11 @@ cert_tmp=$(mktemp)
 openssl s_client -showcerts -connect "${REGISTRY}:443" -servername "$REGISTRY" </dev/null 2>/dev/null \
   | awk '/BEGIN CERTIFICATE/,/END CERTIFICATE/ {print}' > "$cert_tmp" || true
 if [[ -s "$cert_tmp" ]]; then
-  echo "1234qwer" | sudo -S mkdir -p "/etc/docker/certs.d/${REGISTRY}"
-  echo "1234qwer" | sudo -S cp "$cert_tmp" "/etc/docker/certs.d/${REGISTRY}/ca.crt"
-  echo "1234qwer" | sudo -S cp "$cert_tmp" /usr/local/share/ca-certificates/lih-local-wildcard.crt
-  echo "1234qwer" | sudo -S update-ca-certificates >/dev/null || true
-  echo "1234qwer" | sudo -S systemctl restart docker
+  echo "Baynex9977!" | sudo -S mkdir -p "/etc/docker/certs.d/${REGISTRY}"
+  echo "Baynex9977!" | sudo -S cp "$cert_tmp" "/etc/docker/certs.d/${REGISTRY}/ca.crt"
+  echo "Baynex9977!" | sudo -S cp "$cert_tmp" /usr/local/share/ca-certificates/lih-local-wildcard.crt
+  echo "Baynex9977!" | sudo -S update-ca-certificates >/dev/null || true
+  echo "Baynex9977!" | sudo -S systemctl restart docker
 fi
 rm -f "$cert_tmp"
 tmp=$(mktemp -d)
