@@ -1,0 +1,130 @@
+name: mlops-demo-ci
+run-name: mlops-demo-ci ${{ github.sha }}
+# trigger: 2026-07-08-ray-shutdown-omit-final-check
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "inference/**"
+      - "Dockerfile"
+      - "requirements.txt"
+      - ".github/workflows/mlops-demo-ci.yml"
+
+env:
+  IMAGE_NAME: ray-mlops-demo
+  HARBOR_PROJECT: mlops
+  CHARTS_REPO: baynex-hjkim/morpheus-mlops-charts
+  CHARTS_PATH: gitops/mlops-demo
+  ARGOCD_APP: mlops-demo
+  GITHUB_HOST: github.com
+
+jobs:
+  build-push-sync:
+    runs-on: [self-hosted, Linux, X64]
+    steps:
+      - name: Checkout training repo
+        uses: actions/checkout@v4
+
+      - name: Resolve pipeline variables
+        id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          short_sha="${GITHUB_SHA::7}"
+          harbor_registry="${HARBOR_REGISTRY:-harbor.morpheus.test}"
+          image_repo="${harbor_registry}/${HARBOR_PROJECT}/${IMAGE_NAME}"
+          echo "short_sha=${short_sha}" >> "$GITHUB_OUTPUT"
+          echo "harbor_registry=${harbor_registry}" >> "$GITHUB_OUTPUT"
+          echo "image_repo=${image_repo}" >> "$GITHUB_OUTPUT"
+        env:
+          HARBOR_REGISTRY: ${{ secrets.HARBOR_REGISTRY }}
+
+      - name: Docker login to Harbor
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$HARBOR_PASSWORD" | docker login "${{ steps.vars.outputs.harbor_registry }}" \
+            -u "$HARBOR_USERNAME" \
+            --password-stdin
+        env:
+          HARBOR_USERNAME: ${{ secrets.HARBOR_USERNAME }}
+          HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
+
+      - name: Build and push image
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_repo="${{ steps.vars.outputs.image_repo }}"
+          short_sha="${{ steps.vars.outputs.short_sha }}"
+          docker build \
+            -t "${image_repo}:${short_sha}" \
+            -t "${image_repo}:latest" \
+            .
+          docker push "${image_repo}:${short_sha}"
+          docker push "${image_repo}:latest"
+
+      - name: Update chart image tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          short_sha="${{ steps.vars.outputs.short_sha }}"
+          git clone "https://x-access-token:${CHARTS_REPO_TOKEN}@${GITHUB_HOST}/${CHARTS_REPO}.git" charts-repo
+          cd "charts-repo/${CHARTS_PATH}"
+          SHORT_SHA="$short_sha" python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          short_sha = os.environ["SHORT_SHA"]
+          path = Path("values.yaml")
+          lines = []
+          for line in path.read_text().splitlines():
+              if line.startswith("runId: "):
+                  lines.append(f'runId: "{short_sha}"')
+              elif line.startswith("  tag: "):
+                  lines.append(f'  tag: "{short_sha}"')
+              else:
+                  lines.append(line)
+          path.write_text("\n".join(lines) + "\n")
+          PY
+          cd ../..
+          git config user.name "mlops-demo-ci"
+          git config user.email "mlops-demo-ci@example.com"
+          git add "${CHARTS_PATH}/values.yaml"
+          if git diff --cached --quiet; then
+            echo "Chart image tag already up to date"
+          else
+            git commit -m "Update mlops-demo image tag to ${short_sha}"
+            git push origin main
+          fi
+        env:
+          CHARTS_REPO_TOKEN: ${{ secrets.CHARTS_REPO_TOKEN }}
+
+      - name: Install Argo CD CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="v3.4.3"
+          curl -ksSL -o /tmp/argocd "https://github.com/argoproj/argo-cd/releases/download/${version}/argocd-linux-amd64"
+          chmod +x /tmp/argocd
+          /tmp/argocd version --client
+
+      - name: Sync Argo CD application
+        shell: bash
+        run: |
+          set -euo pipefail
+          server="${ARGOCD_SERVER:-argocd.morpheus.test}"
+          /tmp/argocd login "$server" \
+            --username "$ARGOCD_USERNAME" \
+            --password "$ARGOCD_PASSWORD" \
+            --insecure \
+            --grpc-web
+          /tmp/argocd app sync "$ARGOCD_APP" --prune --grpc-web
+          /tmp/argocd app wait "$ARGOCD_APP" --sync --operation --timeout 600 --grpc-web
+        env:
+          ARGOCD_SERVER: ${{ secrets.ARGOCD_SERVER }}
+          ARGOCD_USERNAME: ${{ secrets.ARGOCD_USERNAME }}
+          ARGOCD_PASSWORD: ${{ secrets.ARGOCD_PASSWORD }}
